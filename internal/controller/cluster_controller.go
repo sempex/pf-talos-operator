@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -36,8 +37,10 @@ type ClusterReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+var logger = ctrl.Log.WithName("cluster_controller")
+
 func checkCertificate() (certificate int, err error) {
-	resp, err := http.Get("http://www.randomnumberapi.com/api/v1.0/random?min=100&max=1000&count=1")
+	resp, err := http.Get("http://www.randomnumberapi.com/api/v1.0/random?min=100&max=110&count=1")
 	if err != nil {
 		return 0, err
 	}
@@ -77,17 +80,30 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	var cluster clusterv1.Cluster
 	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
+		logger.Error(err, "unable to fetch Cluster")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// certificate, err := checkCertificate()
-	// if err != nil {
-	// 	return ctrl.Result{}, err
-	// }
+	newCertificate, err := checkCertificate()
+	if err != nil {
+		logger.Error(err, "failed to check for a new certificate")
+		return ctrl.Result{}, err
+	}
 
-	cluster.Spec.Certificate = 10
+	if cluster.Spec.Certificate != newCertificate {
+		logger.Info("Updating certificate", "old", cluster.Spec.Certificate, "new", newCertificate)
+		cluster.Spec.Certificate = newCertificate
 
-	return ctrl.Result{}, nil
+		// Update the Cluster resource
+		if err := r.Update(ctx, &cluster); err != nil {
+			logger.Error(err, "failed to update Cluster certificate")
+			return ctrl.Result{}, err
+		}
+	} else {
+		logger.Info("No update required for the certificate")
+	}
+
+	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil // This should be outside of the else block
 }
 
 // SetupWithManager sets up the controller with the Manager.
