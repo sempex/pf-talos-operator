@@ -1,0 +1,8 @@
+apiVersion: cluster.sempex/v1
+kind: Cluster
+metadata:
+  name: tim
+spec:
+  name: tim 
+  controlplane: 3
+  workernodes: 3
